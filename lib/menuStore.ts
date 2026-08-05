@@ -1,38 +1,51 @@
 import "server-only";
-import { promises as fs } from "fs";
-import os from "os";
-import path from "path";
+import { sql } from "@/lib/db";
 import type { MenuItem } from "@/types/menu";
 import { MENU as SEED_MENU } from "@/data/menu";
 import { slugify } from "@/utils/slugify";
 
-// On Vercel (and other serverless/read-only deployments) the project
-// directory is not writable, so we fall back to the OS temp directory.
-// Note: this means edits made via the admin panel will not persist
-// across deployments/cold starts in that environment.
-const CONTENT_DIR = process.env.VERCEL
-  ? path.join(os.tmpdir(), "itminot-content")
-  : path.join(process.cwd(), "content");
-const MENU_FILE = path.join(CONTENT_DIR, "menu.json");
+// Data is persisted in Postgres (Neon) so that changes made in the admin
+// panel survive redeploys and cold starts. Each row stores the full
+// MenuItem as JSONB, keyed by id, which keeps this close to the previous
+// file-based storage shape while giving us real persistence.
 
-async function ensureFile(): Promise<void> {
-  await fs.mkdir(CONTENT_DIR, { recursive: true });
-  try {
-    await fs.access(MENU_FILE);
-  } catch {
-    await fs.writeFile(MENU_FILE, JSON.stringify(SEED_MENU, null, 2), "utf-8");
+let schemaReady: Promise<void> | null = null;
+
+async function ensureSchema(): Promise<void> {
+  if (!schemaReady) {
+    schemaReady = (async () => {
+      await sql`
+        CREATE TABLE IF NOT EXISTS menu_items (
+          id TEXT PRIMARY KEY,
+          data JSONB NOT NULL
+        )
+      `;
+
+      const rows = await sql`SELECT COUNT(*)::int AS count FROM menu_items`;
+      const count = (rows[0] as { count: number }).count;
+
+      if (count === 0) {
+        for (const item of SEED_MENU) {
+          await sql`
+            INSERT INTO menu_items (id, data)
+            VALUES (${item.id}, ${JSON.stringify(item)})
+            ON CONFLICT (id) DO NOTHING
+          `;
+        }
+      }
+    })().catch((err) => {
+      // Allow retrying on the next call instead of caching a rejected promise.
+      schemaReady = null;
+      throw err;
+    });
   }
+  return schemaReady;
 }
 
 async function readAll(): Promise<MenuItem[]> {
-  await ensureFile();
-  const raw = await fs.readFile(MENU_FILE, "utf-8");
-  return JSON.parse(raw) as MenuItem[];
-}
-
-async function writeAll(items: MenuItem[]): Promise<void> {
-  await fs.mkdir(CONTENT_DIR, { recursive: true });
-  await fs.writeFile(MENU_FILE, JSON.stringify(items, null, 2), "utf-8");
+  await ensureSchema();
+  const rows = await sql`SELECT data FROM menu_items ORDER BY id`;
+  return rows.map((row) => row.data as MenuItem);
 }
 
 export async function getMenuItems(): Promise<MenuItem[]> {
@@ -40,18 +53,21 @@ export async function getMenuItems(): Promise<MenuItem[]> {
 }
 
 export async function getMenuItemById(id: string): Promise<MenuItem | undefined> {
-  const items = await readAll();
-  return items.find((item) => item.id === id);
+  await ensureSchema();
+  const rows = await sql`SELECT data FROM menu_items WHERE id = ${id}`;
+  return (rows[0]?.data as MenuItem | undefined) ?? undefined;
 }
 
 export type NewMenuItemInput = Omit<MenuItem, "id" | "slug">;
 
 export async function createMenuItem(input: NewMenuItemInput): Promise<MenuItem> {
-  const items = await readAll();
+  await ensureSchema();
   const slug = slugify(input.name);
   const newItem: MenuItem = { ...input, id: slug, slug };
-  items.push(newItem);
-  await writeAll(items);
+  await sql`
+    INSERT INTO menu_items (id, data)
+    VALUES (${newItem.id}, ${JSON.stringify(newItem)})
+  `;
   return newItem;
 }
 
@@ -59,19 +75,20 @@ export async function updateMenuItem(
   id: string,
   patch: Partial<Omit<MenuItem, "id">>,
 ): Promise<MenuItem | null> {
-  const items = await readAll();
-  const index = items.findIndex((item) => item.id === id);
-  if (index === -1) return null;
-  const updated: MenuItem = { ...items[index], ...patch };
-  items[index] = updated;
-  await writeAll(items);
+  await ensureSchema();
+  const existing = await getMenuItemById(id);
+  if (!existing) return null;
+  const updated: MenuItem = { ...existing, ...patch };
+  await sql`
+    UPDATE menu_items SET data = ${JSON.stringify(updated)} WHERE id = ${id}
+  `;
   return updated;
 }
 
 export async function deleteMenuItem(id: string): Promise<boolean> {
-  const items = await readAll();
-  const next = items.filter((item) => item.id !== id);
-  if (next.length === items.length) return false;
-  await writeAll(next);
+  await ensureSchema();
+  const existing = await getMenuItemById(id);
+  if (!existing) return false;
+  await sql`DELETE FROM menu_items WHERE id = ${id}`;
   return true;
 }

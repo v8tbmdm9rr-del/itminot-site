@@ -1,10 +1,8 @@
 import { NextResponse } from "next/server";
-import { promises as fs } from "fs";
-import path from "path";
+import { put } from "@vercel/blob";
 import sharp from "sharp";
 import { slugify } from "@/utils/slugify";
 
-const UPLOAD_DIR = path.join(process.cwd(), "public", "images", "uploads");
 const MAX_SIZE = 8 * 1024 * 1024;
 
 export async function POST(request: Request) {
@@ -34,10 +32,16 @@ export async function POST(request: Request) {
     );
   }
 
-  await fs.mkdir(UPLOAD_DIR, { recursive: true });
   const baseName = file.name.replace(/\.[^./]+$/, "") || "photo";
-  const filename = `${slugify(baseName)}.webp`;
-  await fs.writeFile(path.join(UPLOAD_DIR, filename), resized);
+  const filename = `${slugify(baseName)}-${Date.now()}.webp`;
 
-  return NextResponse.json({ path: `/images/uploads/${filename}` }, { status: 201 });
+  // Uploaded images are stored in Vercel Blob (public access) instead of the
+  // local filesystem, since the project directory is read-only on Vercel's
+  // serverless runtime and would not persist across deployments/cold starts.
+  const blob = await put(`uploads/${filename}`, resized, {
+    access: "public",
+    contentType: "image/webp",
+  });
+
+  return NextResponse.json({ path: blob.url }, { status: 201 });
 }

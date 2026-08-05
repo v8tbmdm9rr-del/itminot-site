@@ -1,51 +1,46 @@
 import "server-only";
-import { promises as fs } from "fs";
-import os from "os";
-import path from "path";
+import { sql } from "@/lib/db";
 import type { BookingFormValues, BookingRecord } from "@/types/order";
 
-// On Vercel (and other serverless/read-only deployments) the project
-// directory is not writable, so we fall back to the OS temp directory.
-// Note: this means bookings will not persist across deployments/cold
-// starts in that environment.
-const CONTENT_DIR = process.env.VERCEL
-  ? path.join(os.tmpdir(), "itminot-content")
-  : path.join(process.cwd(), "content");
-const BOOKINGS_FILE = path.join(CONTENT_DIR, "bookings.json");
+// Bookings are persisted in Postgres (Neon) instead of a local JSON file so
+// that they survive redeploys and cold starts on serverless hosting.
 
-async function ensureFile(): Promise<void> {
-  await fs.mkdir(CONTENT_DIR, { recursive: true });
-  try {
-    await fs.access(BOOKINGS_FILE);
-  } catch {
-    await fs.writeFile(BOOKINGS_FILE, "[]", "utf-8");
+let schemaReady: Promise<void> | null = null;
+
+async function ensureSchema(): Promise<void> {
+  if (!schemaReady) {
+    schemaReady = (async () => {
+      await sql`
+        CREATE TABLE IF NOT EXISTS bookings (
+          id TEXT PRIMARY KEY,
+          data JSONB NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+      `;
+    })().catch((err) => {
+      schemaReady = null;
+      throw err;
+    });
   }
-}
-
-async function readAll(): Promise<BookingRecord[]> {
-  await ensureFile();
-  const raw = await fs.readFile(BOOKINGS_FILE, "utf-8");
-  return JSON.parse(raw) as BookingRecord[];
-}
-
-async function writeAll(bookings: BookingRecord[]): Promise<void> {
-  await fs.mkdir(CONTENT_DIR, { recursive: true });
-  await fs.writeFile(BOOKINGS_FILE, JSON.stringify(bookings, null, 2), "utf-8");
+  return schemaReady;
 }
 
 export async function getBookings(): Promise<BookingRecord[]> {
-  const bookings = await readAll();
-  return bookings.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  await ensureSchema();
+  const rows = await sql`SELECT data FROM bookings ORDER BY created_at DESC`;
+  return rows.map((row) => row.data as BookingRecord);
 }
 
 export async function addBooking(input: BookingFormValues): Promise<BookingRecord> {
-  const bookings = await readAll();
+  await ensureSchema();
   const record: BookingRecord = {
     ...input,
     id: `booking-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     createdAt: new Date().toISOString(),
   };
-  bookings.push(record);
-  await writeAll(bookings);
+  await sql`
+    INSERT INTO bookings (id, data, created_at)
+    VALUES (${record.id}, ${JSON.stringify(record)}, ${record.createdAt})
+  `;
   return record;
 }

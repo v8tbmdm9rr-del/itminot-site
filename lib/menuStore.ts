@@ -1,11 +1,18 @@
 import "server-only";
 import { promises as fs } from "fs";
+import os from "os";
 import path from "path";
 import type { MenuItem } from "@/types/menu";
 import { MENU as SEED_MENU } from "@/data/menu";
 import { slugify } from "@/utils/slugify";
 
-const CONTENT_DIR = path.join(process.cwd(), "content");
+// On Vercel (and other serverless/read-only deployments) the project
+// directory is not writable, so we fall back to the OS temp directory.
+// Note: this means edits made via the admin panel will not persist
+// across deployments/cold starts in that environment.
+const CONTENT_DIR = process.env.VERCEL
+  ? path.join(os.tmpdir(), "itminot-content")
+  : path.join(process.cwd(), "content");
 const MENU_FILE = path.join(CONTENT_DIR, "menu.json");
 
 async function ensureFile(): Promise<void> {

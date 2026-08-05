@@ -1,9 +1,16 @@
 import "server-only";
 import { promises as fs } from "fs";
+import os from "os";
 import path from "path";
 import type { BookingFormValues, BookingRecord } from "@/types/order";
 
-const CONTENT_DIR = path.join(process.cwd(), "content");
+// On Vercel (and other serverless/read-only deployments) the project
+// directory is not writable, so we fall back to the OS temp directory.
+// Note: this means bookings will not persist across deployments/cold
+// starts in that environment.
+const CONTENT_DIR = process.env.VERCEL
+  ? path.join(os.tmpdir(), "itminot-content")
+  : path.join(process.cwd(), "content");
 const BOOKINGS_FILE = path.join(CONTENT_DIR, "bookings.json");
 
 async function ensureFile(): Promise<void> {

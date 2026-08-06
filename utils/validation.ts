@@ -7,7 +7,7 @@ export const checkoutSchema = z
   .object({
     name: z.string().trim().min(2, "Введите имя").max(60, "Слишком длинное имя"),
     phone: z.string().trim().regex(PHONE_REGEX, "Введите корректный номер телефона"),
-    fulfillment: z.enum(["delivery", "pickup"]),
+    fulfillment: z.enum(["delivery", "pickup", "dine-in"]),
     address: z.string().trim().optional().or(z.literal("")),
     entrance: z.string().trim().max(10).optional().or(z.literal("")),
     floor: z.string().trim().max(10).optional().or(z.literal("")),

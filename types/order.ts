@@ -1,4 +1,4 @@
-export type FulfillmentMethod = "delivery" | "pickup";
+export type FulfillmentMethod = "delivery" | "pickup" | "dine-in";
 export type PaymentMethod = "cash" | "card" | "transfer" | "online";
 
 export interface CheckoutFormValues {

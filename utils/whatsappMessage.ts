@@ -6,6 +6,7 @@ import { formatPrice } from "./format";
 const FULFILLMENT_LABEL: Record<CheckoutFormValues["fulfillment"], string> = {
   delivery: "Доставка",
   pickup: "Самовывоз",
+  "dine-in": "В зале",
 };
 
 const PAYMENT_LABEL: Record<CheckoutFormValues["payment"], string> = {
@@ -31,7 +32,7 @@ function itemLabel(item: CartItem): string {
 }
 
 export function buildOrderMessage({
-  orderNumber,
+ orderNumber,
   items,
   subtotal,
   deliveryPrice,
@@ -61,7 +62,7 @@ export function buildOrderMessage({
   if (values.fulfillment === "delivery") {
     lines.push(`Адрес: ${values.address ?? ""}`);
     if (values.entrance) lines.push(`Подъезд: ${values.entrance}`);
-    if (values.floor) lines.push(`Этаж: ${values.floor}`);
+    if (values.floor) lines.push(`ЭтаЖ: ${values.floor}`);
     if (values.apartment) lines.push(`Квартира: ${values.apartment}`);
   }
   lines.push(`Желаемое время: ${values.desiredTime}`, "");
@@ -83,7 +84,7 @@ export function buildOrderMessage({
   lines.push(
     values.fulfillment === "delivery"
       ? `Доставка: ${deliveryPrice === 0 ? "бесплатно" : formatPrice(deliveryPrice)}`
-      : "Доставка: самовывоз",
+      : `Доставка: ${FULFILLMENT_LABEL[values.fulfillment].toLowerCase()}`,
   );
   lines.push(`Итого: ${formatPrice(total)}`, "");
   lines.push(`Способ оплаты: ${PAYMENT_LABEL[values.payment]}`);

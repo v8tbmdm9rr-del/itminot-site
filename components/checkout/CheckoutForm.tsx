@@ -162,6 +162,13 @@ export function CheckoutForm() {
               <input type="radio" value="pickup" className="sr-only" {...register("fulfillment")} />
               Самовывоз
             </label>
+            <label className={cn(
+              "flex-1 cursor-pointer rounded-xl border px-4 py-3 text-center text-sm transition-colors",
+              fulfillment === "dine-in" ? "border-gold bg-gold/10 text-cream" : "border-cream/15 text-cream/70",
+            )}>
+              <input type="radio" value="dine-in" className="sr-only" {...register("fulfillment")} />
+              В зале
+            </label>
           </div>
         </div>
 
@@ -291,7 +298,15 @@ export function CheckoutForm() {
           </div>
           <div className="flex justify-between text-cream/70">
             <span>Доставка</span>
-            <span>{fulfillment === "pickup" ? "самовывоз" : deliveryPrice === 0 ? "бесплатно" : formatPrice(deliveryPrice)}</span>
+            <span>
+              {fulfillment === "pickup"
+                ? "самовывоз"
+                : fulfillment === "dine-in"
+                  ? "в зале"
+                  : deliveryPrice === 0
+                    ? "бесплатно"
+                    : formatPrice(deliveryPrice)}
+            </span>
           </div>
           <div className="flex justify-between font-display text-lg text-cream">
             <span>Итого</span>
